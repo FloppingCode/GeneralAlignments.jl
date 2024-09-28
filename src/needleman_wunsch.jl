@@ -1,6 +1,6 @@
 using BioSequences
 
-mutable struct Move
+struct Move
     step::Int64
     score::Float64
     # refers to readingFrame of top sequence
@@ -43,14 +43,14 @@ end
 
 # match and mismatch matrix
 function nw_align(A::LongDNA{4}, B::LongDNA{4}, match_score::Float64, mismatch_score::Float64, 
-                match_moves::Vector{Move}, vgap_moves::Vector{Move}, hgap_moves::Vector{Move}) 
+                match_moves::Vector{Move}, vgap_moves::Vector{Move}, hgap_moves::Vector{Move}, testMode=false::Bool) 
 
-    nw_align(A, B, simple_match_penalty_matrix(match_score, mismatch_score), match_moves, vgap_moves, hgap_moves) 
+    nw_align(A, B, simple_match_penalty_matrix(match_score, mismatch_score), match_moves, vgap_moves, hgap_moves, testMode) 
 end
 
 #Needleman Wunsch alignment without affine scoring
 function nw_align(A::LongDNA{4}, B::LongDNA{4}, match_score_matrix::Array{Float64, 2},
-                match_moves::Vector{Move}, vgap_moves::Vector{Move}, hgap_moves::Vector{Move})
+                match_moves::Vector{Move}, vgap_moves::Vector{Move}, hgap_moves::Vector{Move}, testMode=false::Bool)
 
     n, m = length(A), length(B)
 
@@ -72,16 +72,15 @@ function nw_align(A::LongDNA{4}, B::LongDNA{4}, match_score_matrix::Array{Float6
     # Assign score 0 to starting position
     dp_matrix[row_offset, column_offset] = 0.0
     # itterate through dp_matrix
-    for row_index ∈ 1 + row_offset:row_boundary
-        for column_index ∈ 1 + column_offset:column_boundary
-            # calculate position we are moving to (1 indexed)
-            # TODO understand why this works
+    for row_index ∈ row_offset:row_boundary
+        for column_index ∈ column_offset:column_boundary
+            # calculate which position we are moving to
+            # NOTE that the positions are 0 indexed
             top_sequence_pos = column_index-column_offset
             left_sequence_pos = row_index-row_offset
-
             # find the best diagonal move
             for k ∈ match_moves
-                # TODO remove extension of A2 and B2 and use top_seq and left_seq coords
+                # TODO possibly remove extension of A2 and B2 and use top_seq and left_seq coords
                 mismatch_sum = sum(t -> match_score_matrix[toInt(A2[column_index - t]), toInt(B2[row_index - t])], 1 : k.step)
                 dp_matrix[row_index, column_index] = min(
                     dp_matrix[row_index, column_index],
@@ -110,22 +109,20 @@ function nw_align(A::LongDNA{4}, B::LongDNA{4}, match_score_matrix::Array{Float6
             end
         end
     end
-    display(dp_matrix[1:end,1:end])
+    # TODO rename x and y
     # Backtracking
     x = column_boundary
     y = row_boundary
     res_A = LongDNA{4}("")
     res_B = LongDNA{4}("")
     while x > column_offset || y > row_offset
-        #println("col ",x)
-        #println("row ",y)
         top_sequence_pos = x-column_offset
         left_sequence_pos = y-row_offset
-        if x == column_offset # first row
+        if x == column_offset # first column
             push!(res_A, DNA_Gap)
             push!(res_B, B2[y - 1])
             y -= 1
-        elseif y == row_offset # first column
+        elseif y == row_offset # first row
             push!(res_A, A2[x - 1])
             push!(res_B, DNA_Gap)
             x -= 1
@@ -160,7 +157,6 @@ function nw_align(A::LongDNA{4}, B::LongDNA{4}, match_score_matrix::Array{Float6
                     end
                     # update
                     y -= k.step
-                    # perform move
                     break
                 end
             end
@@ -183,19 +179,22 @@ function nw_align(A::LongDNA{4}, B::LongDNA{4}, match_score_matrix::Array{Float6
 
         end
     end
-    println(dp_matrix[row_boundary,column_boundary])
+    if testMode
+        # used in testing
+        return reverse(res_A), reverse(res_B), dp_matrix[end,end]
+    end
     return reverse(res_A), reverse(res_B)
 end
 
 # Needleman Wunsch alignment with affine scoring
 function nw_align(A::LongDNA{4}, B::LongDNA{4}, match_score::Float64, mismatch_score::Float64, match_moves::Vector{Move}, 
         vgap_moves::Vector{Move}, hgap_moves::Vector{Move}, extension_score::Float64, 
-        edge_extension_begin=false::Bool, edge_extension_end=false::Bool)
+        edge_extension_begin=false::Bool, edge_extension_end=false::Bool,testMode=false::Bool)
  
-    nw_align(A, B, simple_match_penalty_matrix(match_score, mismatch_score), match_moves, vgap_moves, hgap_moves, extension_score, edge_extension_begin, edge_extension_end) 
+    nw_align(A, B, simple_match_penalty_matrix(match_score, mismatch_score), match_moves, vgap_moves, hgap_moves, extension_score, edge_extension_begin, edge_extension_end,testMode) 
 end
 
-function nw_align(A::LongDNA{4}, B::LongDNA{4}, match_score_matrix::Array{Float64, 2}, match_moves::Vector{Move}, vgap_moves::Vector{Move}, hgap_moves::Vector{Move}, extension_score::Float64, edge_extension_begin=false::Bool, edge_extension_end=false::Bool)
+function nw_align(A::LongDNA{4}, B::LongDNA{4}, match_score_matrix::Array{Float64, 2}, match_moves::Vector{Move}, vgap_moves::Vector{Move}, hgap_moves::Vector{Move}, extension_score::Float64, edge_extension_begin=false::Bool, edge_extension_end=false::Bool,testMode=false::Bool)
     
     n, m = length(A), length(B)
 
@@ -215,7 +214,7 @@ function nw_align(A::LongDNA{4}, B::LongDNA{4}, match_score_matrix::Array{Float6
     B2 = LongDNA{4}("A")^(row_offset - 1) * B
 
     # Initialize DP matrix
-    # The cell at [x + column_offset, y + column_offset] is the score of the best alignment of A[1 : x] with B[1 : y]
+    # The cell at [x + row_offset, y + column_offset] is the score of the best alignment of A[1 : x] with B[1 : y]
     dp_matrix = fill(Inf64, row_boundary, column_boundary)
 
     # Assign score 0 to the empty alignment
@@ -236,13 +235,14 @@ function nw_align(A::LongDNA{4}, B::LongDNA{4}, match_score_matrix::Array{Float6
     end
 
     #Main DP -step
-    for row_index ∈ 1 + row_offset : row_boundary
-        for column_index ∈ 1 + column_offset : column_boundary
+    for row_index ∈ row_offset : row_boundary
+        for column_index ∈ column_offset : column_boundary
             top_sequence_pos = column_index-column_offset
             left_sequence_pos = row_index-row_offset
 
             # find the best diagonal move
             for k ∈ match_moves
+                #println("column_index ",column_index," row_index ", row_index)
                 mismatch_sum = sum(t -> match_score_matrix[toInt(A2[column_index - t]), toInt(B2[row_index - t])], 1 : k.step)
                 dp_matrix[row_index, column_index] = min(
                     dp_matrix[row_index, column_index],dp_matrix[row_index-k.step,column_index-k.step]+k.score+mismatch_sum)
@@ -302,7 +302,6 @@ function nw_align(A::LongDNA{4}, B::LongDNA{4}, match_score_matrix::Array{Float6
         end
     end
 
-    #display(dp_matrix[1:end,1:end])
     # Backtracking
     res_A = LongDNA{4}("")
     res_B = LongDNA{4}("")
@@ -315,8 +314,6 @@ function nw_align(A::LongDNA{4}, B::LongDNA{4}, match_score_matrix::Array{Float6
     while x > column_offset || y > row_offset
         top_sequence_pos = x-column_offset
         left_sequence_pos = y-row_offset
-        #println("col ", x)
-        #println("row ", y)
         if x == column_offset # first row
             push!(res_A, DNA_Gap)
             push!(res_B, B2[y - 1])
@@ -333,7 +330,6 @@ function nw_align(A::LongDNA{4}, B::LongDNA{4}, match_score_matrix::Array{Float6
             if !must_move_hor
                 
                 for k ∈ vgap_moves
-                    # TODO check where infinity and such
                     !( ((top_sequence_pos) % k.vertical_stride == k.vertical_phase) &&
                        ((left_sequence_pos-k.step) % k.horizontal_stride == k.horizontal_phase) ) ? continue : 
                     # check if the move leads to the current cell
@@ -341,7 +337,6 @@ function nw_align(A::LongDNA{4}, B::LongDNA{4}, match_score_matrix::Array{Float6
                         current_score = must_move_ver ? vaffine_matrix[y, x] : dp_matrix[y, x]
                         can_move_affine = (current_score == vaffine_matrix[y-k.step, x] + extension_score * k.step)
                         can_move_regular = (current_score == dp_matrix[y-k.step, x] + k.score)
-                        #gap extension
                     else
                         current_score = dp_matrix[y,x]
                         can_move_affine = (false)
@@ -383,7 +378,7 @@ function nw_align(A::LongDNA{4}, B::LongDNA{4}, match_score_matrix::Array{Float6
 
                     if can_move_affine || can_move_regular
                         
-                        for i ∈ 1:k.step # TODO why is it matching B2 if move is horizontal
+                        for i ∈ 1:k.step
                             push!(res_A, A2[x - i])
                             push!(res_B, DNA_Gap)
                         end
@@ -407,7 +402,6 @@ function nw_align(A::LongDNA{4}, B::LongDNA{4}, match_score_matrix::Array{Float6
                     # check if the move leads to the current cell
                     if dp_matrix[y, x] == dp_matrix[y - k.step,x - k.step] + k.score + s
                         # record the path
-                        #println("match length ", k.step)
                         for i ∈ 1:k.step
                             push!(res_A, A2[x - i])
                             push!(res_B, B2[y - i])
@@ -425,17 +419,10 @@ function nw_align(A::LongDNA{4}, B::LongDNA{4}, match_score_matrix::Array{Float6
             end
         end
     end
+
+    if testMode
+        # used in testing
+        return reverse(res_A), reverse(res_B), dp_matrix[end:end]
+    end
     return reverse(res_A), reverse(res_B)
 end
-
-#A = LongDNA{2}("CCGACCCCGATTCCCGTTA")
-#B = LongDNA{2}("GACCTTCACCGTTA")
-#                 TCACCG---GTCTA---GCCCCCTACAAAAGGCGACATCTGCCCTGGCCG---ATTGGCTACCAGACGA
-#A = LongDNA{4}("ACTGCT")
-#                 TCACCGCTGATCGACTGGCACCCTACAAAA---GACATCTGCCCTGGCCGCTGGTTGGCTACCAGACGA
-#B = LongDNA{4}("GCCCTAC")
-#match_moves = [Move(1, 0.0,1,0), Move(3, 0.0,1,0)]
-#gap_moves = [Move(3, 1.0,1,0), Move(1, 2.0,1,0)]
-#alignment = nw_align(A, B, .0, 0.5, match_moves, gap_moves, gap_moves, 0.5)
-#println(alignment[1])
-#println(alignment[2])

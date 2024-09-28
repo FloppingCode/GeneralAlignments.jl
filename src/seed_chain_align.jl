@@ -71,14 +71,20 @@ function find_kmer_matches(A::LongDNA{4}, B::LongDNA{4}, kmerLength)
 
     return kmerMatches
 end
-function updateMovePhase(moves::Vector{Move}, v_shiftPhase::Int64, h_shiftPhase::Int64)
-    # om vi har pos x i A, låt r = x mod 3
-
+function updateMovePhase(moves::Vector{Move}, posA::Int64, posB::Int64)
+    #NOTE we don't update horiontal phase
+    #NOTE we also assume that the global vertical_phase is 0 for all updates of vertical_phase
+    local_moves = Vector{Move}()
     for k in moves
-        k.horizontal_phase = (h_shiftPhase + k.horizontal_phase) % k.horizontal_stride
-        k.vertical_phase = (v_shiftPhase + k.vertical_phase) % k.vertical_stride
+        A_codon_pos = (posA-1) % k.vertical_stride
+        ## ASSUME vertical_phase 0
+        new_v_phase = (k.vertical_stride-A_codon_pos) % k.vertical_stride
+        new_h_phase = k.horizontal_phase
+        # create local move with correct phase
+        tmp_move = Move(k.step, k.score, k.horizontal_stride, new_h_phase, k.vertical_stride, new_v_phase, k.extensionAble)
+        push!(local_moves,tmp_move)
     end
-    return moves
+    return local_moves
 end
 
 #Kmer selection variant algorithm (unused)
@@ -270,53 +276,24 @@ function seed_chain_align(A::LongDNA{4}, B::LongDNA{4}, match_score_matrix::Arra
     for kmer in kmerPath
         if !(kmer.posA == prevA + k && kmer.posB == prevB + k)
             if prevA == -k+1 && prevB == -k+1
-                println("first block")
-                println(A[prevA + k : kmer.posA - 1])
-                println(B[prevB + k : kmer.posB - 1])
                 alignment = nw_align(A[prevA + k : kmer.posA - 1], B[prevB + k : kmer.posB - 1], match_score_matrix, match_moves, vgap_moves, hgap_moves, extension_score, true, false)
-                println(alignment)
                 result .*= alignment
             else
-                local_vgap = updateMovePhase(vgap_moves, prevA+k+1, prevB+k+1)
-                local_hgap = updateMovePhase(hgap_moves, prevA+k+1, prevB+k+1)
-                println("middle block")
-                println(local_hgap[2].vertical_phase)
-                println(prevA + k, " : ",  kmer.posA - 1)
-                println(A[prevA + k : kmer.posA - 1])
-                println(prevB + k, " : ",  kmer.posB - 1)
-                println(B[prevB + k : kmer.posB - 1])
+                # NOTE that this only works on vertical_phase if the global vertical_phase is 0
+                local_vgap = updateMovePhase(vgap_moves, prevA+k, prevB+k)
+                local_hgap = updateMovePhase(hgap_moves, prevA+k, prevB+k)
                 alignment = nw_align(A[prevA + k : kmer.posA - 1], B[prevB + k : kmer.posB - 1], match_score_matrix, match_moves, local_vgap, local_hgap, extension_score, false, false)
-                println(alignment)
                 result .*= alignment
-                
             end
         end
         result .*= [A[kmer.posA : kmer.posA + k - 1], B[kmer.posB : kmer.posB + k - 1]]
         prevA = kmer.posA
         prevB = kmer.posB
     end
-    #println("final block")
-    #println(A[prevA + k : m])
-    #println(B[prevB + k : n])
-    local_vgap = updateMovePhase(vgap_moves, prevA+k+1, prevB+k+1)
-    local_hgap = updateMovePhase(hgap_moves, prevA+k+1, prevB+k+1)
-
-    #local_vgap = updateMovePhase(vgap_moves, prevA+k-1)
-    #local_hgap = updateMovePhase(hgap_moves, prevB+k-1)
+    # NOTE that this only works on vertical_phase if the global vertical_phase is 0
+    local_vgap = updateMovePhase(vgap_moves, prevA+k, prevB+k)
+    local_hgap = updateMovePhase(hgap_moves, prevA+k, prevB+k)
     result .*= nw_align(A[prevA + k : m], B[prevB + k : n], match_score_matrix, match_moves, local_vgap, local_hgap, extension_score, false, true)
 
     return result
 end
-
-#Example:
-#include("sequence_generator.jl")
-#A, B = generate_seq_pair(50, 0.2, 0.1, 0.01, 0.01, 4)
-#mismatch_score = 1.0
-#match_score = 0.0
-#kmerLength = 6
-#affine_score = -1.0
-#match_moves = [Move(1, 0.0,1,0), Move(3, 0.0,1,0)]
-#gap_moves = [Move(3, 2.0,3,0), Move(1, 1.0,3,0)]
-#a = seed_chain_align(A, B, match_score, mismatch_score, match_moves, gap_moves, gap_moves, affine_score, kmerLength)
-#println(a[1])
-#println(a[2])

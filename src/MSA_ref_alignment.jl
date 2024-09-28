@@ -19,9 +19,9 @@ end
 
 # NOTE that there is at least one single indel which might screw reading frame if mutate
 # add some noise into sequences (not reference)
-for i in 1:length(seqs)-1
-    seqs[i] = mutateSequence(seqs[i])
-end
+#for i in 1:length(seqs)-1
+#    seqs[i] = mutateSequence(seqs[i])
+#end
 
 # align pairwise via seeding
 function msa_ref_alignment(ref, seqs)
@@ -31,9 +31,9 @@ function msa_ref_alignment(ref, seqs)
         # seed pairwise alignment with codon respecting triplet moves
         match_moves = [Move(1,.0), Move(3,.0)]
         # important example
-        hor_moves =  [Move(1, 2.5, 1, 0, 1,0, false), Move(3, 2.0, 1,0,3,0,true)]
-        vert_moves = [Move(1, 2.5, 1, 0, 1,0, false), Move(3, 2.0, 1,0,3,0,true)]
-        aligned_ref, aligned_seq = nw_align(ref, ungap(seqs[seqId]), 0.0, 1.0, match_moves, vert_moves, hor_moves, 0.6)
+        hor_moves =  [Move(1, 2.4, 1, 0, 1,0, false), Move(3, 2.0, 1,0,3,0,true)]
+        vert_moves = [Move(1, 2.4, 1, 0, 1,0, false), Move(3, 2.0, 1,0,3,0,true)]
+        aligned_ref, aligned_seq = seed_chain_align(ref, ungap(seqs[seqId]), 0.0, 0.5, match_moves, vert_moves, hor_moves, 0.98*(2.0/3), 21)
 
         # fix readingframes
         println(seqId)
@@ -75,14 +75,8 @@ function fix_alignment_readingframe(aligned_ref,aligned_seq)
 
         # insertion
         else
-            #r = (x-1-insertAddon)%3
-            #startInsertPos = x-r
-            #aligned_seq = aligned_seq[1:startInsertPos-1] * N_codon * aligned_seq[startInsertPos+4:end]
-            #insertAddon -= 1 # is this correct? 
-            
-            #test
             aligned_seq = aligned_seq[1:x-1-insertAddon] * aligned_seq[x+1-insertAddon:end]
-            insertAddon -= 1 # is this correct? 
+            insertAddon -= 1
         end
     end
 
@@ -96,7 +90,4 @@ for i in 1:length(msa_alignment)
     msa_alignment_str[i] = string(msa_alignment[i])
 end
 
-#NextGenSeqUtils.write_fasta("post-noise-alignment.fasta", ref)
-NextGenSeqUtils.write_fasta("src/post-noise-alignment.fasta", msa_alignment_str, names =nameArray)
-# write to fasta.file
-#NextGenSeqUtils.write_fasta("src/post-noise-alignment.fasta", msa_alignment>_str, )
+NextGenSeqUtils.write_fasta("src/reconstruction-alignment-no-noise.fasta", msa_alignment_str, names =nameArray)
